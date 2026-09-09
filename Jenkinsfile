@@ -12,21 +12,27 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Building application...'
-                bat 'mvn clean compile'
+                dir('devops-jenkins-demo') {
+                    bat 'mvn clean compile'
+                }
             }
         }
 
         stage('Test') {
             steps {
                 echo 'Running tests...'
-                bat 'mvn test'
+                dir('devops-jenkins-demo') {
+                    bat 'mvn test'
+                }
             }
         }
 
         stage('Package') {
             steps {
                 echo 'Packaging application...'
-                bat 'mvn package'
+                dir('devops-jenkins-demo') {
+                    bat 'mvn package'
+                }
             }
         }
     }
