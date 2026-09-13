@@ -6,33 +6,35 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Checking out source code...'
+                checkout scm
             }
         }
 
         stage('Build') {
             steps {
                 echo 'Building application...'
-                dir('devops-jenkins-demo') {
-                    bat 'mvn clean compile'
-                }
+                sh 'mvn clean compile'
             }
         }
 
         stage('Test') {
             steps {
                 echo 'Running tests...'
-                dir('devops-jenkins-demo') {
-                    bat 'mvn test'
-                }
+                sh 'mvn test'
             }
         }
 
         stage('Package') {
             steps {
                 echo 'Packaging application...'
-                dir('devops-jenkins-demo') {
-                    bat 'mvn package'
-                }
+                sh 'mvn package'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo 'Building Docker image...'
+                sh 'docker build -t devops-demo:jenkins .'
             }
         }
     }
