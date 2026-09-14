@@ -37,5 +37,16 @@ pipeline {
                 sh 'docker build -t devops-demo:jenkins .'
             }
         }
+
+        stage('Deploy') {
+        steps {
+        echo 'Deploying application...'
+        sh '''
+            docker stop devops-demo || true
+            docker rm devops-demo || true
+            docker run -d --name devops-demo -p 8080:8080 devops-demo:jenkins
+        '''
+    }
+}
     }
 }
