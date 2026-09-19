@@ -1,0 +1,18 @@
+---
+- name: Ensure Nginx is installed
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+
+- name: Ensure Nginx is running
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Configure DevOps application in Nginx
+  ansible.builtin.template:
+    src: devops-demo.conf.j2
+    dest: /etc/nginx/conf.d/devops-demo.conf
+    mode: '0644'
+  notify: Reload Nginx

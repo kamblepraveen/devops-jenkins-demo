@@ -1,0 +1,7 @@
+---
+- name: Configure DevOps server
+  hosts: webserver
+  become: true
+
+  roles:
+    - nginx
