@@ -38,38 +38,14 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Ansible Deploy') {
     steps {
-        echo 'Deploying application...'
+        echo 'Deploying application using Ansible...'
+
         sh '''
-            docker stop devops-demo || true
-            docker rm devops-demo || true
-
-            docker run -d --name devops-demo -p 8080:8080 devops-demo:jenkins
-
-            echo "Waiting for application health..."
-
-            for i in {1..12}; do
-                STATUS=$(docker inspect -f '{{.State.Health.Status}}' devops-demo 2>/dev/null || echo "starting")
-                echo "Health status: $STATUS"
-
-                if [ "$STATUS" = "healthy" ]; then
-                    echo "Application is healthy!"
-                    exit 0
-                fi
-
-                if [ "$STATUS" = "unhealthy" ]; then
-                    echo "Application is unhealthy!"
-                    docker logs devops-demo
-                    exit 1
-                fi
-
-                sleep 5
-            done
-
-            echo "Health check timed out!"
-            docker logs devops-demo
-            exit 1
+            /usr/bin/ansible-playbook \
+            -i ansible/inventory \
+            ansible/site.yml
         '''
     }
 }

@@ -1,0 +1,4 @@
+---
+docker_image: devops-demo:jenkins
+container_name: devops-demo
+app_port: 8080
