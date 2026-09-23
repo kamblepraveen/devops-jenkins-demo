@@ -10,24 +10,10 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build & Test & Package') {
             steps {
-                echo 'Building application...'
-                sh 'mvn clean compile'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                echo 'Running tests...'
-                sh 'mvn test'
-            }
-        }
-
-        stage('Package') {
-            steps {
-                echo 'Packaging application...'
-                sh 'mvn package'
+                echo 'Building, testing and packaging application...'
+                sh 'mvn clean package'
             }
         }
 
@@ -39,15 +25,15 @@ pipeline {
         }
 
         stage('Ansible Deploy') {
-    steps {
-        echo 'Deploying application using Ansible...'
+            steps {
+                echo 'Deploying application using Ansible...'
 
-        sh '''
-            /usr/bin/ansible-playbook \
-            -i ansible/inventory \
-            ansible/site.yml
-        '''
-    }
-}
+                sh '''
+                    /usr/bin/ansible-playbook \
+                    -i ansible/inventory \
+                    ansible/site.yml
+                '''
+            }
+        }
     }
 }
