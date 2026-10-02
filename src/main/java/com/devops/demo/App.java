@@ -15,6 +15,6 @@ public class App {
 
     @GetMapping("/")
     public String home() {
-        return "DevOps CI/CD Demo Application is running!";
+        return "DevOps CI/CD Demo Application Version 2 is running!";
     }
 }
