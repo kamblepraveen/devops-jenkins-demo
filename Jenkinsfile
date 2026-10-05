@@ -51,16 +51,16 @@ pipeline {
     steps {
         echo "Deploying Docker image ${BUILD_NUMBER} to Kubernetes..."
 
-        sh '''
-            ssh -i /var/lib/jenkins/.ssh/k8s_deploy_key \
-            ec2-user@172.31.11.72 \
-            "sudo kubectl set image deployment/devops-demo \
-            devops-demo=kamblepraveen/devops-demo:${BUILD_NUMBER}"
+        sshagent(credentials: ['k8s-ssh-key']) {
+            sh '''
+                ssh ec2-user@172.31.11.72 \
+                "sudo kubectl set image deployment/devops-demo \
+                devops-demo=kamblepraveen/devops-demo:${BUILD_NUMBER}"
 
-            ssh -i /var/lib/jenkins/.ssh/k8s_deploy_key \
-            ec2-user@172.31.11.72 \
-            "sudo kubectl rollout status deployment/devops-demo --timeout=120s"
-        '''
+                ssh ec2-user@172.31.11.72 \
+                "sudo kubectl rollout status deployment/devops-demo --timeout=120s"
+            '''
+        }
     }
 }
 
