@@ -24,6 +24,30 @@ pipeline {
             }
         }
 
+        stage('Docker Hub Push') {
+    steps {
+        echo "Pushing Docker image for Jenkins build ${BUILD_NUMBER}..."
+
+        withCredentials([
+            usernamePassword(
+                credentialsId: 'dockerhub-credentials',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_TOKEN'
+            )
+        ]) {
+            sh '''
+                echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USER" --password-stdin
+
+                docker tag devops-demo:jenkins \
+                kamblepraveen/devops-demo:${BUILD_NUMBER}
+
+                docker push \
+                kamblepraveen/devops-demo:${BUILD_NUMBER}
+            '''
+        }
+    }
+}
+
         stage('Ansible Deploy') {
             steps {
                 echo 'Deploying application using Ansible...'
