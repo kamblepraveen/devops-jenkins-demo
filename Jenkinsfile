@@ -64,16 +64,5 @@ pipeline {
     }
 }
 
-        stage('Ansible Deploy') {
-            steps {
-                echo 'Deploying application using Ansible...'
-
-                sh '''
-                    /usr/bin/ansible-playbook \
-                    -i ansible/inventory \
-                    ansible/site.yml
-                '''
-            }
-        }
     }
 }
