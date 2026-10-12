@@ -1,0 +1,35 @@
+
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'ap-south-1'
+        ECR_REGISTRY = '657878534030.dkr.ecr.ap-south-1.amazonaws.com'
+        ECR_REPOSITORY = 'devops-project2-app'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out source code...'
+                checkout scm
+            }
+        }
+
+        stage('Maven Build') {
+            steps {
+                echo 'Building and testing application...'
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo 'Building Docker image...'
+                sh '''
+                    docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER} .
+                '''
+            }
+        }
+    }
+}
