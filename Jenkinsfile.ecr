@@ -31,5 +31,26 @@ pipeline {
                 '''
             }
         }
+
+        
+stage('ECR Login') {
+    steps {
+        echo 'Authenticating Docker with Amazon ECR...'
+        sh '''
+            aws ecr get-login-password --region ${AWS_REGION} |
+            docker login --username AWS --password-stdin ${ECR_REGISTRY}
+        '''
+    }
+}
+
+stage('ECR Push') {
+    steps {
+        echo "Pushing Docker image ${BUILD_NUMBER} to ECR..."
+        sh '''
+            docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}
+        '''
+    }
+}
+
     }
 }
