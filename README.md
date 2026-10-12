@@ -932,3 +932,5 @@ The project demonstrates not only successful tool installation, but how
 the individual DevOps components integrate into one working delivery
 platform and how failures across those layers can be diagnosed and
 resolved.
+
+Thank you
