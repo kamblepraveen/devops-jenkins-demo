@@ -85,7 +85,39 @@ REMOTE
 
             }  // Closes sshagent
         }      // Closes steps
-    }          // Closes Deploy to Kubernetes stage
+    } 
+    
+    
+stage('Smoke Test') {
+    steps {
+        echo 'Verifying application health on Kubernetes...'
+
+        sshagent(credentials: ['k8s-ssh-key']) {
+            sh '''
+                ssh -o BatchMode=yes ec2-user@172.31.11.72 'bash -se' <<'REMOTE'
+set -e
+
+POD=$(sudo k3s kubectl get pods \
+    -n ecr-test \
+    -l app=ecr-springboot \
+    -o jsonpath='{.items[0].metadata.name}')
+
+RESPONSE=$(sudo k3s kubectl exec \
+    -n ecr-test "$POD" -- \
+    wget -qO- http://127.0.0.1:8080/)
+
+echo "Application response: $RESPONSE"
+
+echo "$RESPONSE" | grep -q \
+    "DevOps CI/CD Demo Application Version 3 is running!"
+
+echo "Smoke test PASSED"
+REMOTE
+            '''
+        }
+    }
+}
+         // Closes Deploy to Kubernetes stage
 
   }          // Closes stages
 }              // Closes pipeline
