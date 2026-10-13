@@ -88,6 +88,7 @@ REMOTE
     } 
     
     
+
 stage('Smoke Test') {
     steps {
         echo 'Verifying application health on Kubernetes...'
@@ -97,26 +98,40 @@ stage('Smoke Test') {
                 ssh -o BatchMode=yes ec2-user@172.31.11.72 'bash -se' <<'REMOTE'
 set -e
 
-POD=$(sudo k3s kubectl get pods \
-    -n ecr-test \
-    -l app=ecr-springboot \
-    -o jsonpath='{.items[0].metadata.name}')
+echo "Waiting for Kubernetes deployment..."
+sudo k3s kubectl rollout status \
+    deployment/ecr-springboot \
+    -n ecr-test --timeout=120s
 
-RESPONSE=$(sudo k3s kubectl exec \
-    -n ecr-test "$POD" -- \
-    wget -qO- http://127.0.0.1:8080/)
+echo "Checking application HTTP response..."
 
-echo "Application response: $RESPONSE"
+for i in 1 2 3 4 5
+do
+    if RESPONSE=$(sudo k3s kubectl exec \
+        -n ecr-test deployment/ecr-springboot -- \
+        wget -qO- http://127.0.0.1:8080/); then
 
-echo "$RESPONSE" | grep -q \
-    "DevOps CI/CD Demo Application Version 3 is running!"
+        echo "Application response: $RESPONSE"
 
-echo "Smoke test PASSED"
+        if echo "$RESPONSE" | grep -q \
+            "DevOps CI/CD Demo Application Version 3 is running!"; then
+            echo "Smoke test PASSED"
+            exit 0
+        fi
+    fi
+
+    echo "Smoke test attempt $i failed. Retrying..."
+    sleep 5
+done
+
+echo "Smoke test FAILED"
+exit 1
 REMOTE
             '''
         }
     }
 }
+
          // Closes Deploy to Kubernetes stage
 
   }          // Closes stages
