@@ -52,5 +52,38 @@ stage('ECR Push') {
     }
 }
 
+
+
+stage('Deploy to Kubernetes') {
+    steps {
+        echo 'Deploying ECR image to K3s...'
+
+        sshagent(credentials: ['k8s-ssh-key']) {
+            
+sh '''
+    IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}"
+
+    ssh -o BatchMode=yes ec2-user@172.31.11.72 \
+        "bash -s -- '$IMAGE'" <<'REMOTE'
+set -e
+
+IMAGE="$1"
+
+ECR_PASSWORD=$(aws ecr get-login-password --region ap-south-1)
+
+sudo k3s crictl pull \
+    --creds "AWS:${ECR_PASSWORD}" "$IMAGE"
+
+sudo k3s kubectl set image deployment/ecr-springboot \
+    springboot="$IMAGE" -n ecr-test
+
+sudo k3s kubectl rollout status deployment/ecr-springboot \
+    -n ecr-test --timeout=120s
+REMOTE
+'''
+
+
+
+
     }
 }
