@@ -86,6 +86,27 @@ REMOTE
             }  // Closes sshagent
         }      // Closes steps
     } 
+
+    stage('Capture Previous Image') {
+    steps {
+        echo 'Recording currently deployed Kubernetes image...'
+
+        sshagent(credentials: ['k8s-ssh-key']) {
+            sh '''
+                ssh -o BatchMode=yes ec2-user@172.31.11.72 \
+                    "sudo k3s kubectl get deployment ecr-springboot \
+                    -n ecr-test \
+                    -o jsonpath='{.spec.template.spec.containers[0].image}'" \
+                    > previous-image.txt
+
+                echo "Previous image:"
+                cat previous-image.txt
+
+                test -s previous-image.txt
+            '''
+        }
+    }
+}
     
     
 
