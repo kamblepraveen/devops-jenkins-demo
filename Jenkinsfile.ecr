@@ -6,13 +6,22 @@ pipeline {
         AWS_REGION = 'ap-south-1'
         ECR_REGISTRY = '657878534030.dkr.ecr.ap-south-1.amazonaws.com'
         ECR_REPOSITORY = 'devops-project2-app'
+        K3S_SERVER = '172.31.11.72'
+        K8S_NAMESPACE = 'ecr-test'
+        K8S_DEPLOYMENT = 'ecr-springboot'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 echo 'Checking out source code...'
                 checkout scm
+
+                // Remove state left by earlier Jenkins builds.
+                sh '''
+                    rm -f previous-image.txt deployment-attempted.txt
+                '''
             }
         }
 
@@ -27,100 +36,115 @@ pipeline {
             steps {
                 echo 'Building Docker image...'
                 sh '''
-                    docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER} .
+                    docker build \
+                        -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER} .
                 '''
             }
         }
 
-        
-stage('ECR Login') {
-    steps {
-        echo 'Authenticating Docker with Amazon ECR...'
-        sh '''
-            aws ecr get-login-password --region ${AWS_REGION} |
-            docker login --username AWS --password-stdin ${ECR_REGISTRY}
-        '''
-    }
-}
+        stage('ECR Login') {
+            steps {
+                echo 'Authenticating Docker with Amazon ECR...'
+                sh '''
+                    set -e
+                    aws ecr get-login-password --region "${AWS_REGION}" |
+                        docker login --username AWS \
+                        --password-stdin "${ECR_REGISTRY}"
+                '''
+            }
+        }
 
-stage('ECR Push') {
-    steps {
-        echo "Pushing Docker image ${BUILD_NUMBER} to ECR..."
-        sh '''
-            docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}
-        '''
-    }
-}
+        stage('ECR Push') {
+            steps {
+                echo "Pushing Docker image ${BUILD_NUMBER} to ECR..."
+                sh '''
+                    docker push \
+                        ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}
+                '''
+            }
+        }
 
+        stage('Capture Previous Image') {
+            steps {
+                echo 'Recording currently deployed Kubernetes image...'
 
+                sshagent(credentials: ['k8s-ssh-key']) {
+                    sh '''
+                        set -e
 
-stage('Deploy to Kubernetes') {
-    steps {
-        echo 'Deploying ECR image to K3s...'
-        writeFile file: 'deployment-attempted.txt', text: 'yes'
+                        ssh -o BatchMode=yes \
+                            ec2-user@${K3S_SERVER} \
+                            "sudo k3s kubectl get deployment ${K8S_DEPLOYMENT} \
+                            -n ${K8S_NAMESPACE} \
+                            -o jsonpath='{.spec.template.spec.containers[0].image}'" \
+                            > previous-image.txt
 
-        sshagent(credentials: ['k8s-ssh-key']) {
-            
+                        test -s previous-image.txt
 
-sh '''
-    IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}"
+                        echo "Previous image:"
+                        cat previous-image.txt
+                        echo
+                    '''
+                }
+            }
+        }
 
-    ssh -o BatchMode=yes ec2-user@172.31.11.72 \
-        "bash -s -- '$IMAGE'" <<'REMOTE'
+        stage('Deploy to Kubernetes') {
+            steps {
+                echo 'Deploying ECR image to K3s...'
+
+                // Indicates that deployment processing was started.
+                writeFile file: 'deployment-attempted.txt', text: 'yes'
+
+                sshagent(credentials: ['k8s-ssh-key']) {
+                    sh '''
+                        set -e
+
+                        IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${BUILD_NUMBER}"
+
+                        ssh -o BatchMode=yes \
+                            ec2-user@${K3S_SERVER} \
+                            "bash -s -- '$IMAGE'" <<'REMOTE'
 set -e
 
 IMAGE="$1"
+
+echo "Pulling new image: $IMAGE"
 
 ECR_PASSWORD=$(aws ecr get-login-password --region ap-south-1)
 
 sudo k3s crictl pull \
     --creds "AWS:${ECR_PASSWORD}" "$IMAGE"
 
+echo "Updating Kubernetes deployment..."
+
 sudo k3s kubectl set image deployment/ecr-springboot \
     springboot="$IMAGE" -n ecr-test
 
+echo "Waiting for deployment rollout..."
+
 sudo k3s kubectl rollout status deployment/ecr-springboot \
     -n ecr-test --timeout=120s
+
+echo "Kubernetes deployment completed."
 REMOTE
-'''
-
-            }  // Closes sshagent
-        }      // Closes steps
-    } 
-
-    stage('Capture Previous Image') {
-    steps {
-        echo 'Recording currently deployed Kubernetes image...'
-
-        sshagent(credentials: ['k8s-ssh-key']) {
-            sh '''
-                ssh -o BatchMode=yes ec2-user@172.31.11.72 \
-                    "sudo k3s kubectl get deployment ecr-springboot \
-                    -n ecr-test \
-                    -o jsonpath='{.spec.template.spec.containers[0].image}'" \
-                    > previous-image.txt
-
-                echo "Previous image:"
-                cat previous-image.txt
-
-                test -s previous-image.txt
-            '''
+                    '''
+                }
+            }
         }
-    }
-}
-    
-    
 
-stage('Smoke Test') {
-    steps {
-        echo 'Verifying application health on Kubernetes...'
+        stage('Smoke Test') {
+            steps {
+                echo 'Verifying application health on Kubernetes...'
 
-        sshagent(credentials: ['k8s-ssh-key']) {
-            sh '''
-                ssh -o BatchMode=yes ec2-user@172.31.11.72 'bash -se' <<'REMOTE'
+                sshagent(credentials: ['k8s-ssh-key']) {
+                    sh '''
+                        ssh -o BatchMode=yes \
+                            ec2-user@${K3S_SERVER} 'bash -se' <<'REMOTE'
 set -e
 
-echo "Waiting for Kubernetes deployment..."
+echo "Checking Kubernetes rollout..."
+
 sudo k3s kubectl rollout status \
     deployment/ecr-springboot \
     -n ecr-test --timeout=120s
@@ -149,27 +173,42 @@ done
 echo "Smoke test FAILED"
 exit 1
 REMOTE
-            '''
+                    '''
+                }
+            }
         }
     }
-}
-}
+
     post {
+
+        success {
+            echo 'CI/CD pipeline completed successfully!'
+            echo 'Application deployed and smoke test passed.'
+        }
+
         failure {
             script {
+                echo 'Pipeline failed. Checking rollback requirements...'
+
                 if (fileExists('deployment-attempted.txt') &&
                     fileExists('previous-image.txt')) {
 
                     def previousImage = readFile('previous-image.txt').trim()
 
-                    echo "Checking whether Kubernetes needs rollback..."
-                    echo "Previous image: ${previousImage}"
+                    if (!previousImage) {
+                        echo 'Previous image is empty. Rollback skipped.'
+                    } else {
+                        echo "Previous image: ${previousImage}"
 
-                    sshagent(credentials: ['k8s-ssh-key']) {
-                        withEnv(["PREVIOUS_IMAGE=${previousImage}"]) {
-                            sh '''
-                                ssh -o BatchMode=yes ec2-user@172.31.11.72 \
-                                    "bash -s -- '$PREVIOUS_IMAGE'" <<'REMOTE'
+                        try {
+                            sshagent(credentials: ['k8s-ssh-key']) {
+                                withEnv(["PREVIOUS_IMAGE=${previousImage}"]) {
+                                    sh '''
+                                        set -e
+
+                                        ssh -o BatchMode=yes \
+                                            ec2-user@${K3S_SERVER} \
+                                            "bash -s -- '$PREVIOUS_IMAGE'" <<'REMOTE'
 set -e
 
 PREVIOUS_IMAGE="$1"
@@ -186,12 +225,16 @@ if [ "$CURRENT_IMAGE" = "$PREVIOUS_IMAGE" ]; then
     exit 0
 fi
 
-echo "Restoring previous image..."
+echo "Starting automatic Kubernetes rollback..."
 
 ECR_PASSWORD=$(aws ecr get-login-password --region ap-south-1)
 
+echo "Pulling previous image..."
+
 sudo k3s crictl pull \
     --creds "AWS:${ECR_PASSWORD}" "$PREVIOUS_IMAGE"
+
+echo "Restoring previous image..."
 
 sudo k3s kubectl set image deployment/ecr-springboot \
     springboot="$PREVIOUS_IMAGE" -n ecr-test
@@ -199,18 +242,38 @@ sudo k3s kubectl set image deployment/ecr-springboot \
 sudo k3s kubectl rollout status deployment/ecr-springboot \
     -n ecr-test --timeout=120s
 
-echo "Rollback rollout completed."
+echo "Automatic rollback rollout completed."
+
+echo "Checking restored application response..."
+
+RESPONSE=$(sudo k3s kubectl exec \
+    -n ecr-test deployment/ecr-springboot -- \
+    wget -qO- http://127.0.0.1:8080/)
+
+echo "Application response: $RESPONSE"
+
+echo "$RESPONSE" | grep -q \
+    "DevOps CI/CD Demo Application Version 3 is running!"
+
+echo "Rollback smoke test PASSED."
 REMOTE
-                            '''
+                                    '''
+                                }
+                            }
+
+                            echo 'Automatic rollback completed successfully.'
+
+                        } catch (Exception err) {
+                            echo "Automatic rollback failed: ${err.getMessage()}"
+                            echo 'Manual investigation is required.'
                         }
                     }
+
                 } else {
-                    echo 'No deployment attempt recorded. Skipping rollback.'
+                    echo 'Deployment not attempted or previous image missing.'
+                    echo 'Skipping automatic rollback.'
                 }
             }
         }
     }
-
-  }
-  }          // Closes stages
-              // Closes pipeline
+}
