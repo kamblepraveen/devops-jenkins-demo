@@ -160,7 +160,7 @@ do
         echo "Application response: $RESPONSE"
 
         if echo "$RESPONSE" | grep -q \
-            "DevOps CI/CD Demo Application Version 3 is running!"; then
+            "INTENTIONAL_ROLLBACK_TEST_FAILURE"; then
             echo "Smoke test PASSED"
             exit 0
         fi
