@@ -57,6 +57,7 @@ stage('ECR Push') {
 stage('Deploy to Kubernetes') {
     steps {
         echo 'Deploying ECR image to K3s...'
+        writeFile file: 'deployment-attempted.txt', text: 'yes'
 
         sshagent(credentials: ['k8s-ssh-key']) {
             
