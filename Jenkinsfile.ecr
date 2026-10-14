@@ -156,5 +156,62 @@ REMOTE
 
          // Closes Deploy to Kubernetes stage
 
+    post {
+        failure {
+            script {
+                if (fileExists('deployment-attempted.txt') &&
+                    fileExists('previous-image.txt')) {
+
+                    def previousImage = readFile('previous-image.txt').trim()
+
+                    echo "Checking whether Kubernetes needs rollback..."
+                    echo "Previous image: ${previousImage}"
+
+                    sshagent(credentials: ['k8s-ssh-key']) {
+                        withEnv(["PREVIOUS_IMAGE=${previousImage}"]) {
+                            sh '''
+                                ssh -o BatchMode=yes ec2-user@172.31.11.72 \
+                                    "bash -s -- '$PREVIOUS_IMAGE'" <<'REMOTE'
+set -e
+
+PREVIOUS_IMAGE="$1"
+
+CURRENT_IMAGE=$(sudo k3s kubectl get deployment ecr-springboot \
+    -n ecr-test \
+    -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+echo "Current image: $CURRENT_IMAGE"
+echo "Previous image: $PREVIOUS_IMAGE"
+
+if [ "$CURRENT_IMAGE" = "$PREVIOUS_IMAGE" ]; then
+    echo "Image unchanged. No rollback needed."
+    exit 0
+fi
+
+echo "Restoring previous image..."
+
+ECR_PASSWORD=$(aws ecr get-login-password --region ap-south-1)
+
+sudo k3s crictl pull \
+    --creds "AWS:${ECR_PASSWORD}" "$PREVIOUS_IMAGE"
+
+sudo k3s kubectl set image deployment/ecr-springboot \
+    springboot="$PREVIOUS_IMAGE" -n ecr-test
+
+sudo k3s kubectl rollout status deployment/ecr-springboot \
+    -n ecr-test --timeout=120s
+
+echo "Rollback rollout completed."
+REMOTE
+                            '''
+                        }
+                    }
+                } else {
+                    echo 'No deployment attempt recorded. Skipping rollback.'
+                }
+            }
+        }
+    }
+
   }          // Closes stages
 }              // Closes pipeline
