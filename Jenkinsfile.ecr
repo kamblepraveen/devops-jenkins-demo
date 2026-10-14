@@ -244,18 +244,33 @@ sudo k3s kubectl rollout status deployment/ecr-springboot \
 
 echo "Automatic rollback rollout completed."
 
+
 echo "Checking restored application response..."
 
-RESPONSE=$(sudo k3s kubectl exec \
-    -n ecr-test deployment/ecr-springboot -- \
-    wget -qO- http://127.0.0.1:8080/)
+for i in 1 2 3 4 5
+do
+    echo "Rollback smoke test attempt $i..."
 
-echo "Application response: $RESPONSE"
+    if RESPONSE=$(sudo k3s kubectl exec \
+        -n ecr-test deployment/ecr-springboot -- \
+        wget -qO- http://127.0.0.1:8080/); then
 
-echo "$RESPONSE" | grep -q \
-    "DevOps CI/CD Demo Application Version 3 is running!"
+        echo "Application response: $RESPONSE"
 
-echo "Rollback smoke test PASSED."
+        if echo "$RESPONSE" | grep -q \
+            "DevOps CI/CD Demo Application Version 3 is running!"; then
+            echo "Rollback smoke test PASSED."
+            exit 0
+        fi
+    fi
+
+    echo "Application not ready. Retrying in 5 seconds..."
+    sleep 5
+done
+
+echo "Rollback smoke test FAILED."
+exit 1
+
 REMOTE
                                     '''
                                 }
